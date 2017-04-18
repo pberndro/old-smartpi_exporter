@@ -3,14 +3,25 @@ package main
 import (
 	"net/http"
 	"io/ioutil"
+	"io"
 	"encoding/json"
 	"log"
 	"flag"
+	"strconv"
+	"fmt"
+	"bufio"
+	"bytes"
 )
 
+
 var(
-	api_path = flag.String("api_path","http://localhost:1080","HTTP URL where the SmartPi API lives")
+	api_path = flag.String("api_path","http://localhost:1080/api/all/all/now","HTTP URL where the SmartPi API lives")
+	listenAddress = flag.String("web.listen-address", ":9122", "Address on which to expose metrics and web interface.")
+	metricsPath   = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
+	site   = flag.String("smartpi.site", "yourSite", "Your site's name in the SmartPi")
+	smartPiName   = flag.String("smartpi.name", "yourSmartPi", "Your SmartPi's name")
 )
+
 
 type SmartPiData struct {
 	Datasets []struct {
@@ -35,7 +46,8 @@ type SmartPiData struct {
 	Time            string  `json:"time"`
 }
 
-func main() {
+
+func getMetrics(w io.Writer) {
 
 	res, err := http.Get(*api_path)
 	if err != nil{
@@ -54,10 +66,44 @@ func main() {
 	}
 
 	for i := 0; i < len(dat.Datasets[0].Phases) ; i++ {
-
 		for j := 0; j < len(dat.Datasets[0].Phases[i].Values) ; j++ {
-			log.Println(dat.Datasets[0].Phases[i].Values[j].Type)
-			log.Println(dat.Datasets[0].Phases[i].Values[j].Data)
+			fmt.Fprintf(w,"smartpi_exporter" + "{site=\""+ *site +"\",sensor=\","+ *smartPiName + ",\"phase=\""+strconv.Itoa(i)+"\",type=\""+ dat.Datasets[0].Phases[i].Values[j].Type + "\"}" + strconv.FormatFloat(dat.Datasets[0].Phases[i].Values[j].Data,'f', -1, 64 )+ "\n" )
 		}
 	}
 }
+
+
+func errorHandler(f func(io.Writer, *http.Request) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var buf bytes.Buffer
+		wr := bufio.NewWriter(&buf)
+		err := f(wr, r)
+		wr.Flush()
+
+		if err != nil {
+			log.Println(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		_, err = w.Write(buf.Bytes())
+
+		if err != nil {
+			log.Println(err)
+		}
+	}
+}
+
+
+func startServer() {
+	fmt.Printf("Starting exporter")
+	http.HandleFunc(*metricsPath, errorHandler(handleMetricsRequest))
+
+	fmt.Printf("Listening for %s on %s\n", *metricsPath, *listenAddress)
+	log.Fatal(http.ListenAndServe(*listenAddress, nil))
+}
+
+
+func main() {
+	startServer()
+}
+
