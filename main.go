@@ -47,6 +47,13 @@ type SmartPiData struct {
 }
 
 
+func handleMetricsRequest(w io.Writer, r *http.Request) error {
+
+        getMetrics(w)
+	return nil
+}
+
+
 func getMetrics(w io.Writer) {
 
 	res, err := http.Get(*api_path)
