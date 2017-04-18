@@ -48,7 +48,6 @@ type SmartPiData struct {
 
 
 func handleMetricsRequest(w io.Writer, r *http.Request) error {
-
         getMetrics(w)
 	return nil
 }
